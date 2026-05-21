@@ -1,0 +1,110 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net default catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Hardened Reusable Global Helper Functions ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Entity Specific Validation Blueprints ---
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid
+          && data.email is string && data.email.size() <= 120
+          && data.displayName is string && data.displayName.size() <= 120
+          && data.xp is int && data.xp >= 0
+          && data.streak is int && data.streak >= 0;
+    }
+
+    function isValidCourse(data) {
+      return data.id is string && data.id.size() <= 128
+          && data.title is string && data.title.size() <= 200
+          && data.description is string && data.description.size() <= 1000
+          && data.category is string && data.category.size() <= 100
+          && data.level in ['Principiante', 'Intermedio', 'Avanzado']
+          && data.imageType is string && data.imageType.size() <= 100
+          && data.modulesCount is int && data.modulesCount >= 0
+          && data.isAIGenerated is bool;
+    }
+
+    function isValidProgress(data) {
+      return data.id is string && data.id.size() <= 128
+          && data.userId == request.auth.uid
+          && data.courseId is string && data.courseId.size() <= 128
+          && data.courseTitle is string && data.courseTitle.size() <= 200
+          && data.progressPercent is int && data.progressPercent >= 0 && data.progressPercent <= 100;
+    }
+
+    function isValidChat(data) {
+      return data.id is string && data.id.size() <= 128
+          && data.userId == request.auth.uid
+          && data.role in ['user', 'model']
+          && data.content is string && data.content.size() <= 10000;
+    }
+
+    function isValidStudyLesson(data) {
+      return data.id is string && data.id.size() <= 128
+          && data.userId == request.auth.uid
+          && data.title is string && data.title.size() <= 250
+          && data.completed is bool;
+    }
+
+    // --- Collection Enforcements ---
+
+    // 1. Users profiles
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUser(request.resource.data) 
+                    && request.resource.data.email == resource.data.email;
+    }
+
+    // 2. Global Courses
+    match /courses/{courseId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(courseId) && isValidCourse(request.resource.data);
+      allow update: if false; // Global course catalog is read-only or written once by AI, prevent modification
+    }
+
+    // 3. User Course Progress
+    match /users/{userId}/progress/{progressId} {
+      allow list, get: if isOwner(userId) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidId(progressId) && isValidProgress(request.resource.data);
+      allow update: if isOwner(userId) && isValidId(userId) && isValidId(progressId) && isValidProgress(request.resource.data)
+                    && request.resource.data.courseId == resource.data.courseId;
+      allow delete: if isOwner(userId) && isValidId(userId) && isValidId(progressId);
+    }
+
+    // 4. Tutor Conversations
+    match /users/{userId}/chat/{chatId} {
+      allow list, get: if isOwner(userId) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidId(chatId) && isValidChat(request.resource.data);
+      allow update: if false; // Chats are immutable stream logs
+      allow delete: if isOwner(userId) && isValidId(userId) && isValidId(chatId);
+    }
+
+    // 5. Study Agenda Planner
+    match /users/{userId}/studyplan/{lessonId} {
+      allow list, get: if isOwner(userId) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidId(lessonId) && isValidStudyLesson(request.resource.data);
+      allow update: if isOwner(userId) && isValidId(userId) && isValidId(lessonId) && isValidStudyLesson(request.resource.data)
+                    && request.resource.data.userId == resource.data.userId;
+      allow delete: if isOwner(userId) && isValidId(userId) && isValidId(lessonId);
+    }
+  }
+}

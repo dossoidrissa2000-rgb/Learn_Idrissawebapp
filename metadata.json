@@ -1,0 +1,6 @@
+{
+  "name": "LearnAI",
+  "description": "Una plataforma interactiva de aprendizaje potenciada por IA para diseñar cursos personalizados, planificar metas diarias y estudiar con un tutor inteligente en tiempo real.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
